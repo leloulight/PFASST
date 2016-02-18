@@ -124,7 +124,7 @@ namespace pfasst
 
           virtual ~AdvectionDiffusionSweeper()
           {
-            CLOG(INFO, "Advec") << "number of f1 evals: " << this->nf1evals;
+            ML_CLOG(INFO, "Advec", "number of f1 evals: " << this->nf1evals);
           }
           //! @}
 
@@ -151,7 +151,7 @@ namespace pfasst
             }
           }
 
-          void echo_error(time t, bool predict = false)
+          void echo_error(time t)
           {
             auto& qend = as_vector<double, time>(this->get_end_state());
             DVectorT qex(qend.size());
@@ -177,7 +177,7 @@ namespace pfasst
             for (size_t m = 0; m < this->get_nodes().size(); m++) {
                 residuals.push_back(this->get_factory()->create(pfasst::encap::solution));
             }
-            this->residual(this->get_controller()->get_time_step(), residuals);
+            this->residual(this->get_controller()->get_step_size(), residuals);
 
             vector<time> rnorms;
             for (auto r: residuals) {
@@ -190,7 +190,7 @@ namespace pfasst
 
             auto err = this->errors[ktype(n, k)];
 
-            CLOG(INFO, "Advec") << boost::format(this->FORMAT_STR) % (n+1) % k % this->get_nodes().size() % as_vector<double, time>(this->state[0]).size() % rmax % err;
+            ML_CLOG(INFO, "Advec", (boost::format(this->FORMAT_STR) % (n+1) % k % this->get_nodes().size() % as_vector<double, time>(this->state[0]).size() % rmax % err));
 
             this->residuals[ktype(n, k)] = rmax;
           }
@@ -213,8 +213,8 @@ namespace pfasst
           void post_predict() override
           {
             time t  = this->get_controller()->get_time();
-            time dt = this->get_controller()->get_time_step();
-            this->echo_error(t + dt, true);
+            time dt = this->get_controller()->get_step_size();
+            this->echo_error(t + dt);
             this->echo_residual();
           }
 
@@ -224,7 +224,7 @@ namespace pfasst
           void post_sweep() override
           {
             time t  = this->get_controller()->get_time();
-            time dt = this->get_controller()->get_time_step();
+            time dt = this->get_controller()->get_step_size();
             this->echo_error(t + dt);
             this->echo_residual();
           }

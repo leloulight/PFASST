@@ -20,7 +20,7 @@ namespace pfasst
   void MLSDC<time>::perform_sweeps(size_t level)
   {
     auto sweeper = this->get_level(level);
-    CVLOG(1, "Controller") << "on level " << level + 1 << "/" << this->nlevels();
+    ML_CVLOG(1, "Controller", "on level " << level + 1 << "/" << this->nlevels());
     for (size_t s = 0; s < this->nsweeps[level]; s++) {
       if (predict) {
         sweeper->predict(initial & predict);
@@ -79,7 +79,7 @@ namespace pfasst
         l.current()->post_step();
       }
 
-      if (this->get_time() + this->get_time_step() < this->get_end_time()) {
+      if (this->get_time() + this->get_step_size() < this->get_end_time()) {
         this->get_finest()->advance();
       }
     }
@@ -109,9 +109,9 @@ namespace pfasst
       return level_iter;
     }
 
-    CVLOG(1, "Controller") << "Cycle down onto level " << level_iter.level << "/" << this->nlevels();
+    ML_CVLOG(1, "Controller", "Cycle down onto level " << level_iter.level << "/" << this->nlevels());
     trns->restrict(crse, fine, initial);
-    trns->fas(this->get_time_step(), crse, fine);
+    trns->fas(this->get_step_size(), crse, fine);
     crse->save();
 
     return level_iter - 1;
@@ -131,7 +131,7 @@ namespace pfasst
     auto crse = level_iter.coarse();
     auto trns = level_iter.transfer();
 
-    CVLOG(1, "Controller") << "Cycle up onto level " << level_iter.level + 1 << "/" << this->nlevels();
+    ML_CVLOG(1, "Controller", "Cycle up onto level " << level_iter.level + 1 << "/" << this->nlevels());
     trns->interpolate(fine, crse);
 
     if (level_iter < this->finest()) {

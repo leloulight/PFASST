@@ -83,7 +83,7 @@ namespace pfasst
       } else {
         vector<shared_ptr<Encapsulation<time>>> dst = { this->end_state };
         dst[0]->copy(this->start_state);
-        dst[0]->mat_apply(dst, this->get_controller()->get_time_step(), this->quadrature->get_b_mat(), this->fs_impl, false);
+        dst[0]->mat_apply(dst, this->get_controller()->get_step_size(), this->quadrature->get_b_mat(), this->fs_impl, false);
       }
     }
 
@@ -96,7 +96,7 @@ namespace pfasst
       auto const num_nodes = this->quadrature->get_num_nodes();
 
       if (this->quadrature->left_is_node()) {
-        CLOG(INFO, "Sweeper") << "implicit sweeper shouldn't include left endpoint";
+        ML_CLOG(INFO, "Sweeper", "implicit sweeper shouldn't include left endpoint");
         throw ValueError("implicit sweeper shouldn't include left endpoint");
       }
 
@@ -111,11 +111,11 @@ namespace pfasst
       auto U = get<1>(lu);
       this->q_tilde = U.transpose();
 
-      CLOG(DEBUG, "Sweeper") << "Q':" << endl << QT;
-      CLOG(DEBUG, "Sweeper") << "L:" << endl << L;
-      CLOG(DEBUG, "Sweeper") << "U:" << endl << U;
-      CLOG(DEBUG, "Sweeper") << "LU:" << endl << L * U;
-      CLOG(DEBUG, "Sweeper") << "q_tilde:" << endl << this->q_tilde;
+      ML_CLOG(DEBUG, "Sweeper", "Q':" << endl << QT);
+      ML_CLOG(DEBUG, "Sweeper", "L:" << endl << L);
+      ML_CLOG(DEBUG, "Sweeper", "U:" << endl << U);
+      ML_CLOG(DEBUG, "Sweeper", "LU:" << endl << L * U);
+      ML_CLOG(DEBUG, "Sweeper", "q_tilde:" << endl << this->q_tilde);
     }
 
     template<typename time>
@@ -123,11 +123,11 @@ namespace pfasst
     {
       UNUSED(initial);
 
-      auto const dt = this->get_controller()->get_time_step();
+      auto const dt = this->get_controller()->get_step_size();
       auto const t  = this->get_controller()->get_time();
 
-      CLOG(INFO, "Sweeper") << "predicting step " << this->get_controller()->get_step() + 1
-                            << " (t=" << t << ", dt=" << dt << ")";
+      ML_CLOG(INFO, "Sweeper", "predicting step " << this->get_controller()->get_step() + 1
+                               << " (t=" << t << ", dt=" << dt << ")");
 
       auto const anodes = augment(t, dt, this->quadrature->get_nodes());
       for (size_t m = 0; m < anodes.size() - 1; ++m) {
@@ -141,12 +141,12 @@ namespace pfasst
     template<typename time>
     void ImplicitSweeper<time>::sweep()
     {
-      auto const dt = this->get_controller()->get_time_step();
+      auto const dt = this->get_controller()->get_step_size();
       auto const t  = this->get_controller()->get_time();
 
-      CLOG(INFO, "Sweeper") << "sweeping on step " << this->get_controller()->get_step() + 1
-                            << " in iteration " << this->get_controller()->get_iteration()
-                            << " (dt=" << dt << ")";
+      ML_CLOG(INFO, "Sweeper", "sweeping on step " << this->get_controller()->get_step() + 1
+                               << " in iteration " << this->get_controller()->get_iteration()
+                               << " (dt=" << dt << ")");
 
       this->s_integrals[0]->mat_apply(this->s_integrals, dt, this->quadrature->get_s_mat(), this->fs_impl, true);
       if (this->fas_corrections.size() > 0) {
@@ -189,7 +189,7 @@ namespace pfasst
       if (initial_only) {
         return;
       }
-      auto const dt = this->get_controller()->get_time_step();
+      auto const dt = this->get_controller()->get_step_size();
       auto const t0 = this->get_controller()->get_time();
       auto const nodes = this->quadrature->get_nodes();
       for (size_t m = 0; m < nodes.size(); m++) {
