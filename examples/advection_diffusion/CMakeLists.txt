@@ -10,7 +10,6 @@ include_directories(
 set(advec_examples
     vanilla_sdc
     serial_mlsdc
-    serial_mlsdc_autobuild
 )
 
 set(advec_mpi_examples)
@@ -33,6 +32,7 @@ foreach(example ${all_advec_examples})
         add_dependencies(${example} ${pfasst_DEPENDEND_TARGETS})
     endif()
     target_link_libraries(${example}
+        ${pfasst_DEPENDEND_LIBS}
         ${3rdparty_DEPENDEND_LIBS}
         ${FFTW_LIBRARIES}
     )
