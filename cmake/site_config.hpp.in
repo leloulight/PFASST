@@ -3,5 +3,12 @@
 #ifndef _PFASST__SITE_CONFIG_HPP
 #define _PFASST__SITE_CONFIG_HPP
 
+#include <string>
+using namespace std;
+
+namespace pfasst
+{
+  static constexpr const char* VERSION = "@pfasst_VERSION@";
+}  // ::pfasst
 
 #endif  // _PFASST__SITE_CONFIG_HPP

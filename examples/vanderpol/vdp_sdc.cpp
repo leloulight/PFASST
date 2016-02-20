@@ -1,11 +1,12 @@
 /**
- * \file vdp_sdc.cpp
- * Run SDC for the van der Pol oscillator.
+ * @ingroup VanDerPolFiles
+ * @file examples/vanderpol/vdp_sdc.cpp
+ * @since v0.3.0
  */
 #include <pfasst.hpp>
 #include <pfasst/config.hpp>
 #include <pfasst/logging.hpp>
-#include <pfasst/sdc.hpp>
+#include <pfasst/controller/sdc.hpp>
 #include <pfasst/encap/vector.hpp>
 
 #include "vdp_sweeper.hpp"
@@ -16,6 +17,9 @@ namespace pfasst
   {
     namespace vdp
     {
+      /**
+       * @ingroup VanDerPol
+       */
       double run_vdp_sdc(const size_t nsteps, const double dt, const size_t nnodes,
                          const size_t niters, const double nu, const double x0,
                          const double y0, const quadrature::QuadratureType nodetype)
@@ -51,9 +55,6 @@ namespace pfasst
 
 
 #ifndef PFASST_UNIT_TESTING
-/**
- * Main routine running the scalar example with a preset parameters
- */
 int main(int argc, char** argv)
 {
   const double x0 = 2.0,
@@ -66,7 +67,7 @@ int main(int argc, char** argv)
   const pfasst::quadrature::QuadratureType nodetype = pfasst::quadrature::QuadratureType::GaussLegendre;
 
   pfasst::init(argc, argv);
-  LOG(INFO) << "Used timestep:" << dt;
+  ML_LOG(INFO, "Used timestep:" << dt);
 
   pfasst::examples::vdp::run_vdp_sdc(nsteps, dt, nnodes, niters, nu, x0, y0, nodetype);
 }

@@ -1,9 +1,12 @@
-/*
- * Advection/diffusion sweeper.
+/**
+ * @defgroup AdvectionDiffusionFiles Files
+ * @ingroup AdvectionDiffusion
+ *
+ * @file examples/advection_diffusion/advection_diffusion_sweeper.hpp
+ * @since v0.1.0
  */
-
-#ifndef _ADVECTION_DIFFUSION_SWEEPER_HPP_
-#define _ADVECTION_DIFFUSION_SWEEPER_HPP_
+#ifndef _EXAMPLES__ADVEC_DIFF__ADVECTION_DIFFUSION_SWEEPER_HPP_
+#define _EXAMPLES__ADVEC_DIFF__ADVECTION_DIFFUSION_SWEEPER_HPP_
 
 #include <cassert>
 #include <complex>
@@ -32,34 +35,58 @@ namespace pfasst
 {
   namespace examples
   {
+    /**
+     * Advection-Diffusion example
+     *
+     * @defgroup AdvectionDiffusion Advection Diffusion
+     * @ingroup Examples
+     *
+     * This directory contains several implementations of an advection/diffusion solver using the
+     * PFASST framework.
+     *
+     * All of the solvers use the SDC sweeper defined in `advection_diffusion_sweeper.hpp`, and the FFT
+     * routines in `fft.hpp`.
+     *
+     * The implementations are, in order of complexity:
+     *
+     *  - `vanilla_sdc.cpp` - basic example that uses an encapsulated IMEX sweeper.
+     *
+     *  - `serial_mlsdc.cpp` - basic multi-level version that uses polynomial interpolation in time and
+     *    spectral interpolation in space, as defined in `specrtal_transfer_1d.hpp`.
+     *
+     *  - `serial_mlsdc_autobuild.cpp` - same as above, but uses the "auto build" feature to shorten
+     *    `main`.
+     */
     namespace advection_diffusion
     {
       /**
-       * errors at different iterations and time nodes
-       *
-       * Mapping a pair of step/iteration indices onto the error of the solution.
+       * @name Containers for errors/residuals etc.
+       * @{
        */
-      typedef map<pair<size_t, size_t>, double> error_map;
+      typedef map<tuple<size_t, size_t>, double> error_map; // step, iteration -> error
+      typedef map<size_t, error_map> residual_map; // level, (step, iteration) -> residual
+      //! @}
 
+      typedef error_map::value_type vtype;
+      typedef error_map::key_type ktype;
+
+      /**
+       * advection-diffusion sweeper with semi-implicit time-integration.
+       * @ingroup AdvectionDiffusion
+       */
       template<typename time = pfasst::time_precision>
       class AdvectionDiffusionSweeper
         : public encap::IMEXSweeper<time>
       {
-        private:
-          static void init_config_options(po::options_description& opts)
+        public:
+          static void init_opts()
           {
-            opts.add_options()
-              ("spatial_dofs", po::value<size_t>(), "number of spatial degrees of freedom")
-              ;
+            pfasst::config::options::add_option<size_t>("Adv/Diff Sweeper", "spatial_dofs", "Number of spatial degrees of freedom");
           }
 
-        public:
-          static void enable_config_options(size_t index = -1)
+          static void init_logs()
           {
-            config::Options::get_instance()
-              .register_init_function("Advection-Diffusion Sweeper",
-                                      std::function<void(po::options_description&)>(init_config_options),
-                                      index);
+            pfasst::log::add_custom_logger("Advec");
           }
 
         private:
@@ -70,6 +97,7 @@ namespace pfasst
 
           //! @{
           error_map errors;
+          error_map residuals;
           //! @}
 
           //! @{
@@ -96,7 +124,7 @@ namespace pfasst
 
           virtual ~AdvectionDiffusionSweeper()
           {
-            LOG(INFO) << "number of f1 evals: " << this->nf1evals;
+            ML_CLOG(INFO, "Advec", "number of f1 evals: " << this->nf1evals);
           }
           //! @}
 
@@ -123,7 +151,7 @@ namespace pfasst
             }
           }
 
-          void echo_error(time t, bool predict = false)
+          void echo_error(time t)
           {
             auto& qend = as_vector<double, time>(this->get_end_state());
             DVectorT qex(qend.size());
@@ -138,17 +166,43 @@ namespace pfasst
 
             auto n = this->get_controller()->get_step();
             auto k = this->get_controller()->get_iteration();
-            LOG(INFO) << "err:" << n << k << max << "(" << qend.size() << "," << predict << ")";
 
-            this->errors.insert(pair<pair<size_t, size_t>, double>(pair<size_t, size_t>(n, k), max));
+            this->errors.insert(vtype(ktype(n, k), max));
           }
 
-          /**
-           * retrieve errors at iterations and time nodes
-           */
+          void echo_residual()
+          {
+            vector<shared_ptr<Encapsulation<time>>> residuals;
+
+            for (size_t m = 0; m < this->get_nodes().size(); m++) {
+                residuals.push_back(this->get_factory()->create(pfasst::encap::solution));
+            }
+            this->residual(this->get_controller()->get_step_size(), residuals);
+
+            vector<time> rnorms;
+            for (auto r: residuals) {
+              rnorms.push_back(r->norm0());
+            }
+            auto rmax = *std::max_element(rnorms.begin(), rnorms.end());
+
+            auto n = this->get_controller()->get_step();
+            auto k = this->get_controller()->get_iteration();
+
+            auto err = this->errors[ktype(n, k)];
+
+            ML_CLOG(INFO, "Advec", (boost::format(this->FORMAT_STR) % (n+1) % k % this->get_nodes().size() % as_vector<double, time>(this->state[0]).size() % rmax % err));
+
+            this->residuals[ktype(n, k)] = rmax;
+          }
+
           error_map get_errors()
           {
             return this->errors;
+          }
+
+          error_map get_residuals()
+          {
+            return this->residuals;
           }
           //! @}
 
@@ -159,8 +213,9 @@ namespace pfasst
           void post_predict() override
           {
             time t  = this->get_controller()->get_time();
-            time dt = this->get_controller()->get_time_step();
-            this->echo_error(t + dt, true);
+            time dt = this->get_controller()->get_step_size();
+            this->echo_error(t + dt);
+            this->echo_residual();
           }
 
           /**
@@ -169,8 +224,9 @@ namespace pfasst
           void post_sweep() override
           {
             time t  = this->get_controller()->get_time();
-            time dt = this->get_controller()->get_time_step();
+            time dt = this->get_controller()->get_step_size();
             this->echo_error(t + dt);
+            this->echo_residual();
           }
           //! @}
 
@@ -248,4 +304,4 @@ namespace pfasst
   }  // ::pfasst::examples
 }  // ::pfasst
 
-#endif
+#endif  // _EXAMPLES__ADVEC_DIFF__ADVECTION_DIFFUSION_SWEEPER_HPP_
