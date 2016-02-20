@@ -44,27 +44,25 @@ namespace pfasst
       return;
     }
 
-    int nblocks = int(this->get_end_time() / this->get_time_step()) / comm->size();
+    int nblocks = int(this->get_end_time() / this->get_step_size()) / comm->size();
 
     if (nblocks == 0) {
-      CLOG(INFO, "Controller") << "invalid duration: there are more time processors than time steps";
+      ML_CLOG(INFO, "Controller", "invalid duration: there are more time processors than time steps");
       throw ValueError("invalid duration: there are more time processors than time steps");
     }
 
-    if (nblocks * comm->size() * this->get_time_step() < this->get_end_time()) {
-      CLOG(INFO, "Controller") << "invalid duration: mismatch between number of time processors and time steps";
+    if (nblocks * comm->size() * this->get_step_size() < this->get_end_time()) {
+      ML_CLOG(INFO, "Controller", "invalid duration: mismatch between number of time processors and time steps");
       throw ValueError("invalid duration: mismatch between number of time processors and time steps");
     }
 
     for (int nblock = 0; nblock < nblocks; nblock++) {
       this->set_step(nblock * comm->size() + comm->rank());
 
-      if (this->comm->size() == 1) {
-        predict = true;
-      } else {
-        predictor();
-      }
+      predictor();
 
+      ML_CLOG(DEBUG, "Controller", "iterating on step " << this->get_step()
+                                   << " (0/" << this->get_max_iterations() << ")");
       for (this->set_iteration(0);
            this->get_iteration() < this->get_max_iterations() && this->comm->status->keep_iterating();
            this->advance_iteration()) {
@@ -74,6 +72,9 @@ namespace pfasst
         }
         cycle_v(this->finest());
       }
+      ML_CLOG(DEBUG, "Controller", "done iterating on step " << this->get_step()
+                                   << " (" << this->get_iteration() << "/"
+                                   << this->get_max_iterations() << ")");
 
       for (auto l = this->finest(); l >= this->coarsest(); --l) {
         l.current()->post_step();
@@ -101,10 +102,8 @@ namespace pfasst
     }
 
     fine->send(comm, tag(l), false);
-
     trns->restrict(crse, fine, true);
-
-    trns->fas(this->get_time_step(), crse, fine);
+    trns->fas(this->get_step_size(), crse, fine);
     crse->save();
 
     return l - 1;
@@ -118,11 +117,8 @@ namespace pfasst
     auto trns = level_iter.transfer();
 
     trns->interpolate(fine, crse, true);
-
-    if (this->comm->status->previous_is_iterating()) {
-      fine->recv(comm, tag(level_iter), false);
-      trns->interpolate_initial(fine, crse);
-    }
+    fine->recv(comm, tag(level_iter), false);
+    trns->interpolate_initial(fine, crse);
 
     if (level_iter < this->finest()) {
       perform_sweeps(level_iter.level);
@@ -139,10 +135,11 @@ namespace pfasst
     if (this->comm->status->previous_is_iterating()) {
       crse->recv(comm, tag(level_iter), true);
     }
-    this->comm->status->recv();
+    this->comm->status->recv(stag(level_iter));
     this->perform_sweeps(level_iter.level);
     crse->send(comm, tag(level_iter), true);
-    this->comm->status->send();
+    this->comm->status->set_converged(!this->comm->status->keep_iterating());
+    this->comm->status->send(stag(level_iter));
     return level_iter + 1;
   }
 
@@ -208,13 +205,19 @@ namespace pfasst
    * @internals
    * A simple formula is used with current level index \\( L \\) (provided by @p level_iter) and
    * current iteration number \\( I \\):
-   * \\[ L * 10000 + I + 10 \\]
+   * \\[ (L+1) * 10000 + I \\]
    * @endinternals
    */
   template<typename time>
   int PFASST<time>::tag(LevelIter level_iter)
   {
-    return level_iter.level * 10000 + this->get_iteration() + 10;
+    return (level_iter.level+1) * 10000 + this->get_iteration();
+  }
+
+  template<typename time>
+  int PFASST<time>::stag(LevelIter level_iter)
+  {
+    return level_iter.level * 1000 + this->get_iteration();
   }
 
   /**
@@ -224,9 +227,11 @@ namespace pfasst
   template<typename time>
   void PFASST<time>::post()
   {
-    this->comm->status->post();
-    for (auto l = this->coarsest() + 1; l <= this->finest(); ++l) {
-      l.current()->post(comm, tag(l));
+    if (this->comm->status->previous_is_iterating()) {
+      this->comm->status->post(0);
+      for (auto l = this->coarsest() + 1; l <= this->finest(); ++l) {
+        l.current()->post(comm, tag(l));
+      }
     }
   }
 }  // ::pfasst

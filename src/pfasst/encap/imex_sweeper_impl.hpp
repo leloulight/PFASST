@@ -1,5 +1,6 @@
 #include "pfasst/encap/imex_sweeper.hpp"
 
+#include <algorithm>
 #include <cassert>
 using namespace std;
 
@@ -39,6 +40,15 @@ namespace pfasst
       if (! this->quadrature->left_is_node()) {
         this->fs_expl_start = this->get_factory()->create(pfasst::encap::function);
       }
+
+      size_t nsteps = this->get_controller()->get_end_time() / this->get_controller()->get_step_size();
+      size_t digit_step = (this->get_controller()->get_step_size() > 0) ? 
+                            to_string(nsteps + 1).length() : 3;
+      size_t digit_iter = (this->get_controller()->get_max_iterations() > 0) ? 
+                            to_string(this->get_controller()->get_max_iterations() - 1).length() : 3;
+      this->FORMAT_STR = "step: %|" + to_string(digit_step) + "|      iter: %|" + to_string(digit_iter) + "|"
+                         + "      n1: %|2|      n2: %|3|"
+                         + "      residual: %10.4e" + "      err: %10.4e";
     }
 
     template<typename time>
@@ -53,7 +63,7 @@ namespace pfasst
       if (this->quadrature->right_is_node()) {
         this->end_state->copy(this->state.back());
       } else {
-        this->integrate_end_state(this->get_controller()->get_time_step());
+        this->integrate_end_state(this->get_controller()->get_step_size());
       }
     }
 
@@ -69,7 +79,7 @@ namespace pfasst
       if (this->quadrature->right_is_node()) {
         this->end_state->copy(this->state.back());
       } else {
-        this->integrate_end_state(this->get_controller()->get_time_step());
+        this->integrate_end_state(this->get_controller()->get_step_size());
       }
     }
 
@@ -88,7 +98,7 @@ namespace pfasst
     void IMEXSweeper<time>::reevaluate(bool initial_only)
     {
       time t0 = this->get_controller()->get_time();
-      time dt = this->get_controller()->get_time_step();
+      time dt = this->get_controller()->get_step_size();
       if (initial_only) {
         if (this->quadrature->left_is_node()) {
           this->f_expl_eval(this->fs_expl[0], this->state[0], t0);
@@ -163,10 +173,10 @@ namespace pfasst
     template<typename time>
     void IMEXSweeper<time>::predict_with_left(bool initial)
     {
-      time dt = this->get_controller()->get_time_step();
+      time dt = this->get_controller()->get_step_size();
       time t  = this->get_controller()->get_time();
-      CLOG(INFO, "Sweeper") << "predicting step " << this->get_controller()->get_step() + 1
-                            << " (t=" << t << ", dt=" << dt << ")";
+      ML_CVLOG(1, "Sweeper", "predicting step " << this->get_controller()->get_step() + 1
+                             << " (t=" << t << ", dt=" << dt << ")");
 
       if (initial) {
         this->state[0]->copy(this->start_state);
@@ -193,10 +203,10 @@ namespace pfasst
     void IMEXSweeper<time>::predict_without_left(bool initial)
     {
       UNUSED(initial);
-      time dt = this->get_controller()->get_time_step();
+      time dt = this->get_controller()->get_step_size();
       time t  = this->get_controller()->get_time();
-      CLOG(INFO, "Sweeper") << "predicting step " << this->get_controller()->get_step() + 1
-                            << " (t=" << t << ", dt=" << dt << ")";
+      ML_CVLOG(1, "Sweeper", "predicting step " << this->get_controller()->get_step() + 1
+                             << " (t=" << t << ", dt=" << dt << ")");
       time ds;
 
       shared_ptr<Encapsulation<time>> rhs = this->get_factory()->create(pfasst::encap::solution);
@@ -226,10 +236,11 @@ namespace pfasst
     void IMEXSweeper<time>::sweep_with_left()
     {
       auto const nodes = this->quadrature->get_nodes();
-      auto const dt    = this->get_controller()->get_time_step();
+      auto const dt    = this->get_controller()->get_step_size();
       auto const s_mat = this->quadrature->get_s_mat().block(1, 0, nodes.size()-1, nodes.size());
-      CLOG(INFO, "Sweeper") << "sweeping on step " << this->get_controller()->get_step() + 1
-                            << " in iteration " << this->get_controller()->get_iteration() << " (dt=" << dt << ")";
+      ML_CVLOG(1, "Sweeper", "sweeping on step " << this->get_controller()->get_step() + 1
+                             << " in iteration " << this->get_controller()->get_iteration()
+                             << " (dt=" << dt << ")");
       time ds;
 
       this->s_integrals[0]->mat_apply(this->s_integrals, dt, s_mat, this->fs_expl, true);
@@ -264,10 +275,11 @@ namespace pfasst
     void IMEXSweeper<time>::sweep_without_left()
     {
       auto const nodes = this->quadrature->get_nodes();
-      auto const dt    = this->get_controller()->get_time_step();
+      auto const dt    = this->get_controller()->get_step_size();
       auto const s_mat = this->quadrature->get_s_mat();
-      CLOG(INFO, "Sweeper") << "sweeping on step " << this->get_controller()->get_step() + 1
-                            << " in iteration " << this->get_controller()->get_iteration() << " (dt=" << dt << ")";
+      ML_CVLOG(1, "Sweeper", "sweeping on step " << this->get_controller()->get_step() + 1
+                             << " in iteration " << this->get_controller()->get_iteration()
+                             << " (dt=" << dt << ")");
       time ds;
 
       this->s_integrals[0]->mat_apply(this->s_integrals, dt, s_mat, this->fs_expl, true);

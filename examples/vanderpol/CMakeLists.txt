@@ -6,11 +6,9 @@ include_directories(
     ${3rdparty_INCLUDES}
 )
 
-if(NOT ${pfasst_WITH_MPI})
-    set(vanderpol_examples
-        vdp_sdc
-    )
-endif()
+set(vanderpol_examples
+    vdp_sdc
+)
 
 foreach(example ${vanderpol_examples})
     add_executable(${example} ${CMAKE_CURRENT_SOURCE_DIR}/${example}.cpp)
@@ -18,6 +16,7 @@ foreach(example ${vanderpol_examples})
         add_dependencies(${example} ${pfasst_DEPENDEND_TARGETS})
     endif()
     target_link_libraries(${example}
+        ${pfasst_DEPENDEND_LIBS}
         ${3rdparty_DEPENDEND_LIBS}
     )
     if(pfasst_INSTALL_EXAMPLES)

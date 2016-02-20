@@ -10,13 +10,15 @@ using namespace std;
 #include <boost/format.hpp>
 
 #include <pfasst/globals.hpp>
-#include <pfasst/site_config.hpp>
+#include <pfasst/config.hpp>
 #include <pfasst/logging.hpp>
 #ifdef WITH_MPI
   #include <mpi.h>
 #endif
 
 #include "particle_util.hpp"
+
+#define PFASST_RANDOM_SEED 42
 
 
 namespace pfasst
@@ -280,11 +282,7 @@ namespace pfasst
 
         precision scale = 1000.0;
 
-        #ifdef PFASST_DEFAULT_RANDOM_SEED
-          default_random_engine rd_gen(PFASST_RANDOM_SEED);
-        #else
-          default_random_engine rd_gen();
-        #endif
+        default_random_engine rd_gen(PFASST_RANDOM_SEED);
         precision max_pos = max(center->pos());
         precision max_vel = max(center->vel());
         uniform_real_distribution<precision> dist_pos(- max_pos / scale, max_pos / scale);

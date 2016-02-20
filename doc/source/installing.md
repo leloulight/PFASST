@@ -85,11 +85,6 @@ latest release from [GitHub][github_releases].
        `-Dpfasst_DISABLE_LIBCXX=OFF`.
        As libc++ is highly experimental on non-Darwin systems, this is a very exotic option.
 
-     * There are places in the code (mainly examples) that need a random number generator (RNG).
-       By default, `-Dpfasst_DEFAULT_RAND_SEED=ON` is set and the seed for the RNGs is set to `42`.
-       To overwrite this behaviour, set `-Dpfasst_DEFAULT_RAND_SEED=OFF` and 
-       `-Dpfasst_RANDOM_SEED=<YOUR_VALUE>`.
-
    * __Dependencies__
 
      * __Boost__
@@ -163,6 +158,10 @@ latest release from [GitHub][github_releases].
 
 There are a few tweaks and special care require to get up and running on supercomputers.
 We have compiled a few working walk-throughs at \subpage page_supercomputers .
+
+### Score-P and other compiler wrappers
+
+It is possible to use extra compiler wrappers like Score-P when compiling. See \subpage page_scorep.
 
 ## Building with vanilla make
 
