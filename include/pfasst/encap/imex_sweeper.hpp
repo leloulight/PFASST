@@ -1,14 +1,11 @@
-
 #ifndef _PFASST_ENCAP_IMEX_SWEEPER_HPP_
 #define _PFASST_ENCAP_IMEX_SWEEPER_HPP_
 
-#include <vector>
 #include <memory>
+#include <vector>
 
-#include <boost/numeric/ublas/matrix.hpp>
-
-#include "encapsulation.hpp"
-#include "encap_sweeper.hpp"
+#include "pfasst/encap/encapsulation.hpp"
+#include "pfasst/encap/encap_sweeper.hpp"
 
 using namespace std;
 
@@ -18,179 +15,172 @@ namespace pfasst
   {
     using pfasst::encap::Encapsulation;
 
+    /**
+     * Semi-implicit IMEX sweeper.
+     *
+     * This IMEX sweeper is for ODEs of the form
+     * \\( \\dot{U} = F_{\\rm expl}(t,U) + F_{\\rm impl}(t, U) \\).
+     * To reduce complexity and computational effort the non-stiff part is treated explicitly and
+     * the stiff part implicitly.
+     *
+     * This sweeper requires three interfaces to be implemented: two routines to evaluate the
+     * explicit \\( F_{\\rm expl} \\) and implicit \\( F_{\\rm impl} \\) pieces for a given state,
+     * and one routine that solves (perhaps with an external solver) the backward-Euler equation
+     * \\( U^{n+1} - \\Delta t F_{\\rm impl}(U^{n+1}) = RHS \\) for \\( U^{n+1} \\).
+     *
+     * @tparam time precision type of the time dimension
+     */
     template<typename time = time_precision>
     class IMEXSweeper
       : public pfasst::encap::EncapSweeper<time>
     {
-        vector<shared_ptr<Encapsulation<time>>> Q, pQ, S, T, Fe, Fi;
-        matrix<time> Smat, SEmat, SImat;
+      protected:
+
+        //! @{
+        /**
+         * Node-to-node integrals of \\( F(t,u) \\) at all time nodes of the current iteration.
+         */
+        vector<shared_ptr<Encapsulation<time>>> s_integrals;
+
+        /**
+         * Values of the explicit part of the right hand side \\( F_{expl}(t,u) \\) at all time nodes of the current
+         * iteration.
+         */
+        vector<shared_ptr<Encapsulation<time>>> fs_expl;
+        shared_ptr<Encapsulation<time>> fs_expl_start;
+
+        /**
+         * Values of the implicit part of the right hand side \\( F_{impl}(t,u) \\) at all time nodes of the current
+         * iteration.
+         */
+        vector<shared_ptr<Encapsulation<time>>> fs_impl;
+        //! @}
+
+        /**
+        * Set end state to \\( U_0 + \\int F_{expl} + F_{expl} \\).
+        */
+        virtual void integrate_end_state(time dt);
 
       public:
-        ~IMEXSweeper()
-        {}
+        //! @{
+        IMEXSweeper() = default;
+        virtual ~IMEXSweeper() = default;
+        //! @}
 
-        void set_state(shared_ptr<const Encapsulation<time>> q0, size_t m)
-        {
-          Q[m]->copy(q0);
-        }
+        //! @{
+        /**
+         * @copydoc ISweeper::setup(bool)
+         */
+        virtual void setup(bool coarse) override;
 
-        shared_ptr<Encapsulation<time>> get_state(size_t m) const
-        {
-          return Q[m];
-        }
+        /**
+         * Compute low-order provisional solution.
+         *
+         * This performs forward/backward Euler steps across the nodes to compute a low-order provisional solution.
+         *
+         * @param[in] initial if `true` the explicit and implicit part of the right hand side of the
+         *     ODE get evaluated with the initial value
+         */
+        virtual void predict(bool initial) override;
 
-        shared_ptr<Encapsulation<time>> get_tau(size_t m) const
-        {
-          return T[m];
-        }
+        /**
+         * Perform one SDC sweep/iteration.
+         *
+         * This computes a high-order solution from the previous iteration's function values and
+         * corrects it using forward/backward Euler steps across the nodes.
+         */
+        virtual void sweep() override;
 
-        shared_ptr<Encapsulation<time>> get_saved_state(size_t m) const
-        {
-          return pQ[m];
-        }
+        /**
+         * Advance the end solution to start solution.
+         */
+        virtual void advance() override;
 
-        virtual void advance()
-        {
-          Q[0]->copy(Q.back());
-          Fe[0]->copy(Fe.back());
-          Fi[0]->copy(Fi.back());
-        }
+        /**
+         * @copybrief EncapSweeper::reevaluate()
+         */
+        virtual void reevaluate(bool initial_only) override;
 
-        virtual void integrate(time dt, vector<shared_ptr<Encapsulation<time>>> dst) const
-        {
-          dst[0]->mat_apply(dst, dt, Smat, Fe, true);
-          dst[0]->mat_apply(dst, dt, Smat, Fi, false);
-        }
+        /**
+         * @copybrief EncapSweeper::integrate()
+         *
+         * @param[in] dt width of time interval to integrate over
+         * @param[in,out] dst integrated values; will get zeroed out beforehand
+         */
+        virtual void integrate(time dt, vector<shared_ptr<Encapsulation<time>>> dst) const override;
 
-        void setup(bool coarse)
-        {
-          auto nodes = this->get_nodes();
-          assert(nodes.size() >= 1);
+        /**
+         * @copybrief EncapSweeper::residual()
+         *
+         * @param[in] dt width of time interval to integrate over
+         * @param[in,out] dst residuals
+         */
+        virtual void residual(time dt, vector<shared_ptr<Encapsulation<time>>> dst) const override;
+        //! @}
 
-          Smat = compute_quadrature(nodes, nodes, 's');
+        //! @{
+        /**
+         * Evaluate the explicit part of the ODE.
+         *
+         * @param[in,out] f_expl_encap Encapsulation to store the explicit function evaluation.
+         * @param[in] u_encap Encapsulation that stores the solution state at which to evaluate the
+         *     explicit part of the ODE.
+         * @param[in] t Time point of the evaluation.
+         *
+         * @note This method must be implemented in derived sweepers.
+         */
+        virtual void f_expl_eval(shared_ptr<Encapsulation<time>> f_expl_encap,
+                                 shared_ptr<Encapsulation<time>> u_encap,
+                                 time t);
 
-          SEmat = Smat;
-          SImat = Smat;
-          for (size_t m = 0; m < nodes.size() - 1; m++) {
-            time ds = nodes[m + 1] - nodes[m];
-            SEmat(m, m)     -= ds;
-            SImat(m, m + 1) -= ds;
-          }
+        /**
+         * Evaluate the implicit part of the ODE.
+         *
+         * This is typically called to compute the implicit part of the right hand side at the first
+         * collocation node, and on all nodes after restriction or interpolation.
+         *
+         * @param[in,out] f_impl_encap Encapsulation to store the implicit function evaluation.
+         * @param[in] u_encap Encapsulation storing the solution state at which to evaluate the
+         *     implicit part of the ODE.
+         * @param[in] t Time point of the evaluation.
+         *
+         * @note This method must be implemented in derived sweepers.
+         */
+        virtual void f_impl_eval(shared_ptr<Encapsulation<time>> f_impl_encap,
+                                 shared_ptr<Encapsulation<time>> u_encap,
+                                 time t);
 
-          for (size_t m = 0; m < nodes.size(); m++) {
-            Q.push_back(this->get_factory()->create(pfasst::encap::solution));
-            if (coarse) {
-              pQ.push_back(this->get_factory()->create(pfasst::encap::solution));
-            }
-            Fe.push_back(this->get_factory()->create(pfasst::encap::function));
-            Fi.push_back(this->get_factory()->create(pfasst::encap::function));
-          }
+        /**
+         * Solve \\( U - \\Delta t F_{\\rm impl}(U) = RHS \\) for \\( U \\).
+         *
+         * During an IMEX SDC sweep, the correction equation is evolved using a forward-Euler
+         * stepper for the explicit piece, and a backward-Euler stepper for the implicit piece.
+         * This routine (implemented by the user) performs the solve required to perform one
+         * backward-Euler sub-step, and also returns \\( F_{\\rm impl}(U) \\).
+         *
+         * @param[in,out] f_encap Encapsulation to store the evaluated implicit piece.
+         * @param[in,out] u_encap Encapsulation to store the solution of the backward-Euler sub-step.
+         * @param[in] t time point (of \\( RHS \\)).
+         * @param[in] dt sub-step size to the previous time point (\\( \\Delta t \\)).
+         * @param[in] rhs_encap Encapsulation that stores \\( RHS \\).
+         *
+         * @note This method must be implemented in derived sweepers.
+         */
+        virtual void impl_solve(shared_ptr<Encapsulation<time>> f_encap,
+                                shared_ptr<Encapsulation<time>> u_encap,
+                                time t, time dt,
+                                shared_ptr<Encapsulation<time>> rhs_encap);
+        //! @}
 
-          for (size_t m = 0; m < nodes.size() - 1; m++) {
-            S.push_back(this->get_factory()->create(pfasst::encap::solution));
-            if (coarse) {
-              T.push_back(this->get_factory()->create(pfasst::encap::solution));
-            }
-          }
-        }
-
-        virtual void sweep()
-        {
-          const auto   nodes  = this->get_nodes();
-          const size_t nnodes = nodes.size();
-          assert(nnodes >= 1);
-
-	  time dt = this->get_controller()->get_time_step();
-          time t  = this->get_controller()->get_time();
-
-          // integrate
-          S[0]->mat_apply(S, dt, SEmat, Fe, true);
-          S[0]->mat_apply(S, dt, SImat, Fi, false);
-          if (T.size() > 0) {
-            for (size_t m = 0; m < nnodes - 1; m++) {
-              S[m]->saxpy(1.0, T[m]);
-            }
-          }
-
-          // sweep
-          shared_ptr<Encapsulation<time>> rhs = this->get_factory()->create(pfasst::encap::solution);
-
-          for (size_t m = 0; m < nnodes - 1; m++) {
-            time ds = dt * (nodes[m + 1] - nodes[m]);
-
-            rhs->copy(Q[m]);
-            rhs->saxpy(ds, Fe[m]);
-            rhs->saxpy(1.0, S[m]);
-            f2comp(Fi[m + 1], Q[m + 1], t, ds, rhs);
-            f1eval(Fe[m + 1], Q[m + 1], t + ds);
-
-            t += ds;
-          }
-        }
-
-        virtual void predict(bool initial)
-        {
-          const auto   nodes  = this->get_nodes();
-          const size_t nnodes = nodes.size();
-          assert(nnodes >= 1);
-
-	  time dt = this->get_controller()->get_time_step();
-          time t  = this->get_controller()->get_time();
-
-          if (initial) {
-            f1eval(Fe[0], Q[0], t);
-            f2eval(Fi[0], Q[0], t);
-          }
-
-          shared_ptr<Encapsulation<time>> rhs = this->get_factory()->create(pfasst::encap::solution);
-
-          for (size_t m = 0; m < nnodes - 1; m++) {
-            time ds = dt * (nodes[m + 1] - nodes[m]);
-            rhs->copy(Q[m]);
-            rhs->saxpy(ds, Fe[m]);
-            f2comp(Fi[m + 1], Q[m + 1], t, ds, rhs);
-            f1eval(Fe[m + 1], Q[m + 1], t + ds);
-
-            t += ds;
-          }
-        }
-
-        virtual void save()
-        {
-          for (size_t m = 0; m < pQ.size(); m++) {
-            pQ[m]->copy(Q[m]);
-          }
-        }
-
-        virtual void evaluate(size_t m)
-        {
-          time t = this->get_nodes()[m]; // XXX
-          f1eval(Fe[m], Q[m], t);
-          f2eval(Fi[m], Q[m], t);
-        }
-
-        virtual void f1eval(shared_ptr<Encapsulation<time>> /*f*/, shared_ptr<Encapsulation<time>> /*q*/,
-			    time /*t*/)
-        {
-          throw NotImplementedYet("imex (f1eval)");
-        }
-
-        virtual void f2eval(shared_ptr<Encapsulation<time>> /*f*/, shared_ptr<Encapsulation<time>> /*q*/,
-			    time /*t*/)
-        {
-          throw NotImplementedYet("imex (f2eval)");
-        }
-
-        virtual void f2comp(shared_ptr<Encapsulation<time>> /*f*/, shared_ptr<Encapsulation<time>> /*q*/,
-                            time /*t*/, time /*dt*/,
-                            shared_ptr<Encapsulation<time>> /*rhs*/)
-        {
-          throw NotImplementedYet("imex (f2comp)");
-        }
-
+      private:
+        virtual void predict_with_left(bool initial);
+        virtual void predict_without_left(bool initial);
+        virtual void sweep_with_left();
+        virtual void sweep_without_left();
     };
+  }  // ::pfasst::encap
+}  // ::pfasst
 
-  }
-}
+#include "pfasst/encap/imex_sweeper_impl.hpp"
 
 #endif
